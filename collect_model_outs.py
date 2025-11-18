@@ -29,7 +29,7 @@ parser.add_argument("--recover", action='store_true', default = False)
 
 parser.add_argument("--config", type=str)
 
-parser.add_argument("--out_file", type=str)
+parser.add_argument("--out_file", type=str, default="run_outs")
 parser.add_argument("--task_type", default = "direct", type=str)
 args = parser.parse_args()
 
