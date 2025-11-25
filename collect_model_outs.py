@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 from direct import TQ_direct
 from indirect import TQ_indirect
+from collaborative_indirect import AgenticTQ
 import time
 import pickle
 import torch
@@ -102,7 +103,7 @@ truncated_ds = test_ds[0:end_idx]
 if args.task_type == "direct":
     TQ = TQ_direct
 else:
-    TQ = TQ_indirect
+    TQ = AgenticTQ # TQ_indirect
 
 print(f"{len(truncated_ds)=}")
 
@@ -116,11 +117,26 @@ def runprompt(prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_sigmoid_m
     # too long seqlen
     if tokens == None: return None, None
     
-    raw_tokens = tokens[0].detach().cpu().numpy().tolist()
-    tokens_text = search.tokens_to_text(tokens)[0]
-    del tokens
-    tokens_text_np = tokens_text.removeprefix(prompt)
-    return tokens_text_np, raw_tokens, scores
+    # raw_tokens = tokens[0].detach().cpu().numpy().tolist()
+    # tokens_text = search.tokens_to_text(tokens)[0]
+    # del tokens
+    # tokens_text_np = tokens_text.removeprefix(prompt)
+    # return tokens_text_np, raw_tokens, scores
+    
+    if not isinstance(tokens, str):
+        token_ids = tokens[0].detach().cpu().numpy().tolist()
+
+        tokens_text = search.tq.tokens_to_text(tokens)[0] # assumed that we use only collaborative indirect Transfer-Q here
+        generated_text = tokens_text.removeprefix(prompt)
+
+        return generated_text, token_ids, scores
+
+    else:
+        generated_text = tokens.removeprefix(prompt)
+
+        token_ids = search.tq.tokenizer(tokens, return_tensors="pt").input_ids[0].tolist() # # assumed that we use only collaborative indirect Transfer-Q here
+
+        return generated_text, token_ids, scores
 
 for config_num, run_config in enumerate(run_configs):
     print(f"[INFO]: Running config: {run_config=}")
@@ -160,7 +176,11 @@ for config_num, run_config in enumerate(run_configs):
 
         data.append({"prompt": current_prompt, "result": res, "response": current_prompt + res, "elapsed":elapsed, "method": args.out_file + f"_{config_num}"})
         print(f"[DEBUG]: {elapsed=} {len(current_prompt)=} {current_prompt=}, {res=}")
-        with open(Path(args.out_file + f"_{config_num}.jsonl"), "w") as outfile:
+        
+        out_path = Path(args.out_file + f"_{config_num}.jsonl")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with out_path.open("w", encoding="utf-8") as outfile:
             json.dump(data, outfile, ensure_ascii=False)
 
 
