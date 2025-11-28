@@ -348,11 +348,11 @@ class AgenticTQ:
             )
             print("[Orchestrator Decision]:", decision)
 
-            if "<<<ACCEPTED>>>" in decision:
+            if "ACCEPTED" in decision:
                 print("\n Safe -> Final answer found\n")
                 return worker_res, worker_scores
 
-            elif "<<<REGENERATE>>>" in decision:
+            elif "REGENERATE" in decision:
                 print("\n Unsafe -> Regenerating...\n")
                 continue
 
