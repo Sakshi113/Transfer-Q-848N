@@ -41,7 +41,7 @@ def even_chunk(data, chunk_size=10):
 
 class TQ_direct:
     def __init__(self, llm_path="lomahony/eleuther-pythia6.9b-hh-dpo", reward_model="usvsnsp/pythia-6.9b-rm-full-hh-rlhf",
-                 llm_device="cuda:0", rm_device="cuda:1", torch_dtype=torch.float16):
+                 llm_device="cuda:0", rm_device="cuda:1", torch_dtype=torch.float16, cache_dir=None):
         self.llm_dev = llm_device
         self.rm_dev = rm_device
         print("Loading Direct Transfer Code")
@@ -49,13 +49,13 @@ class TQ_direct:
         self.reward_model = reward_model
         print("Loading LLM...")
         
-        self.LLM = AutoModelForCausalLM.from_pretrained(self.llm_path, dtype=torch_dtype).to(self.llm_dev)
+        self.LLM = AutoModelForCausalLM.from_pretrained(self.llm_path, dtype=torch_dtype, cache_dir=cache_dir).to(self.llm_dev)
         self.LLM.eval()
         print(f"Loading tokenizer...")
         self.tokenizer = AutoTokenizer.from_pretrained(self.llm_path)
         self.tokenizer.pad_token = self.tokenizer.eos_token
         print("Loading RM...")
-        self.RM = AutoModelForSequenceClassification.from_pretrained(reward_model, num_labels=1, dtype=torch_dtype)
+        self.RM = AutoModelForSequenceClassification.from_pretrained(reward_model, num_labels=1, dtype=torch_dtype, cache_dir=cache_dir)
        
         self.RM = self.RM.to(self.rm_dev)
         self.reward_tokenizer = AutoTokenizer.from_pretrained(reward_model)

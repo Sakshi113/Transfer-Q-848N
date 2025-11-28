@@ -11,7 +11,7 @@ import time
 import pickle
 import torch
 import numpy as np
-import pdb
+import os
 np.random.seed(42)
 torch.manual_seed(42)
 
@@ -60,8 +60,8 @@ def check_valid_args(args):
         exit(1)
     return run_configs
 
-def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_sigmoid_mixing", sample_temp=None, llm_dev:str="cuda:0") -> str:
-    tokens, scores = search.generate(prompt, method=mode, topk=topk, max_new_token=new_token, weight=rm_weight, debug=True)
+def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_sigmoid_mixing", sample_temp=None, llm_dev:str="cuda:0", debug=True) -> str:
+    tokens, scores = search.generate(prompt, method=mode, topk=topk, max_new_token=new_token, weight=rm_weight, debug=debug)
 
     # too long seqlen
     if tokens is None: return None, None
@@ -74,6 +74,12 @@ def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_s
 
 def main(args):
     run_configs = check_valid_args(args)
+    hf_cache=None
+    if run_configs["cache_dir"] is not None:
+        hf_home = run_configs["cache_dir"]
+        hf_cache = os.path.join(run_configs["cache_dir"], "hub")
+        os.environ['HF_HOME'] = hf_home
+        os.environ['HF_HUB_CACHE'] = hf_cache
 
     print(f"[INFO]: Loaded {len(run_configs)} run configs.")
     print(f"[DEBUG]: {run_configs=}")
@@ -107,7 +113,7 @@ def main(args):
 
     print(f"[INFO]: Loading models ({run_configs['llm']}, {run_configs['rm']})")
     search = TQ(llm_path=run_configs['llm'], reward_model=run_configs['rm'],
-                llm_device=args.llm_gpu, rm_device=args.rm_gpu)
+                llm_device=args.llm_gpu, rm_device=args.rm_gpu, cache_dir=hf_cache)
     print(f"[INFO]: Done")
 
     config_num = 0
@@ -139,7 +145,7 @@ def main(args):
         res, tokens, scores = runprompt(search, current_prompt, float(run_configs["rm_weight"]),
                                         run_configs["topk"], args.max_new_token,
                                         run_configs["mode"], run_configs["sample_temp"],
-                                        llm_dev=args.llm_gpu)
+                                        llm_dev=args.llm_gpu, debug=run_configs['debug'])
         score_overall.append(scores)
         if tokens == None:
             print("Too long, skipped")
@@ -164,7 +170,7 @@ if __name__=="__main__":
     parser.add_argument("--max_new_token", type=int, default=128)
 
     parser.add_argument("--llm_gpu", type=str, default="cuda:0")
-    parser.add_argument("--rm_gpu", type=str, default="cpu")
+    parser.add_argument("--rm_gpu", type=str, default="cuda:1")
     parser.add_argument("--recover", action='store_true', default=False)
 
     parser.add_argument("--config", type=str, default="example_config.yaml")
@@ -174,4 +180,6 @@ if __name__=="__main__":
     args = parser.parse_args()
 
     print(f"{args=}")
+    # for i in range(torch.cuda.device_count()):
+    #     print(torch.cuda.get_device_properties(i).name)
     main(args)
