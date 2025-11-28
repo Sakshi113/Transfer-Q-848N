@@ -10,7 +10,7 @@ conda activate tq
 
 cd transfer_q
 mkdir run_outs
-pip -r requirements.txt
+pip install -r requirements.txt
 ```
 
 # For direct transfer tasks on HH-RLHF dataset run the following command:

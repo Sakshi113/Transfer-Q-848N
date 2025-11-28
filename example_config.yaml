@@ -1,0 +1,8 @@
+# example config originally a json file
+"rm_weight": 1.0
+"topk": 10
+"mode": "greedy"
+"sample_temp": null
+# specifying model names
+"llm": "lomahony/eleuther-pythia6.9b-hh-dpo"
+"rm": "usvsnsp/pythia-6.9b-rm-full-hh-rlhf"
