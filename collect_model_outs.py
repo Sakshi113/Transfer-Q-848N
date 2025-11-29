@@ -59,6 +59,8 @@ def check_valid_args(args):
     elif "sample_temp" not in run_configs:
         print(f"Missing key 'sample_temp' in {run_configs}")
         exit(1)
+
+    print(f"[ !! ] Please Double Check: task type {args.task_type}, loading config from {args.config}")
     return run_configs
 
 def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_sigmoid_mixing", sample_temp=None, llm_dev:str="cuda:0", debug=True):
@@ -98,22 +100,26 @@ def main(args):
     print(f"[INFO]: {end_idx=}, {len(test_ds)=}")
 
     truncated_ds = test_ds[0:end_idx]
-
     if args.task_type == "direct":
-        TQ = TQ_direct
+        print(f"[INFO]: Loading models ({run_configs['llm']}, {run_configs['rm']})")
+        search = TQ_direct(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
+                           llm_device=args.llm_gpu, rm_device=args.rm_gpu)
     elif args.task_type == "indirect":
-        TQ = TQ_indirect
+        print(f"[INFO]: Loading models ({run_configs['llm']}, {run_configs['rm']})")
+        search = TQ_indirect(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
+                             llm_device=args.llm_gpu, rm_device=args.rm_gpu)
     elif args.task_type == "collab":
-        TQ = Collaborative_TQ_indirect
+        print(f"[INFO]: Loading models ({run_configs['llm']}, {run_configs['rm']})")
+        search = Collaborative_TQ_indirect(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
+                                           rm2_path=run_configs['rm2'],
+                                           llm_device=args.llm_gpu, rm_device=args.rm_gpu)
     else:
         print(f"ERROR, unknown task type {args.task_type}")
         exit()
 
     print(f"{len(truncated_ds)=}")
 
-    print(f"[INFO]: Loading models ({run_configs['llm']}, {run_configs['rm']})")
-    search = TQ(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
-                llm_device=args.llm_gpu, rm_device=args.rm_gpu)
+
     print(f"[INFO]: Done")
 
     config_num = 0
@@ -165,18 +171,23 @@ if __name__=="__main__":
     parser.add_argument("--split", type=str, default="test")
 
     parser.add_argument("--run_percent", type=float, default=100.)
-    parser.add_argument("--rm", type=str)
-    parser.add_argument("--llm", type=str)
     parser.add_argument("--max_new_token", type=int, default=128) # 128
 
     parser.add_argument("--llm_gpu", type=str, default="cuda:0")
     parser.add_argument("--rm_gpu", type=str, default="cuda:1")
     parser.add_argument("--recover", action='store_true', default=False)
 
-    parser.add_argument("--config", type=str, default="example_config.yaml")
+    # parser.add_argument("--config", type=str, default="configs/direct_config.yaml")
+    # parser.add_argument("--task_type", default="direct", type=str)
+
+    # parser.add_argument("--config", type=str, default="configs/indirect_config.yaml")
+    # parser.add_argument("--task_type", default="indirect", type=str)
+
+    parser.add_argument("--config", type=str, default="configs/indirect_collab_config.yaml")
+    parser.add_argument("--task_type", default="collab", type=str)
 
     parser.add_argument("--out_file", type=str, default="run_outs/example_out")
-    parser.add_argument("--task_type", default="direct", type=str)
+
     args = parser.parse_args()
 
     print(f"{args=}")
