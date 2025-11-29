@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from direct import TQ_direct
 from indirect import TQ_indirect
+from collaborative_indirect import Collaborative_TQ_indirect
 import time
 import pickle
 import torch
@@ -29,7 +30,7 @@ def check_valid_args(args):
     if not cfg_path.exists():
         print("ERROR: Config doesn't exist!")
         exit(1)
-
+    args.out_file = f"{args.out_file}_{args.task_type}"
     out_path = Path(args.out_file + f"_0.jsonl")
     if out_path.exists() and (not args.recover):
         print("ERROR: out_path already exists!")
@@ -60,7 +61,7 @@ def check_valid_args(args):
         exit(1)
     return run_configs
 
-def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_sigmoid_mixing", sample_temp=None, llm_dev:str="cuda:0", debug=True) -> str:
+def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_sigmoid_mixing", sample_temp=None, llm_dev:str="cuda:0", debug=True):
     tokens, scores = search.generate(prompt, method=mode, topk=topk, max_new_token=new_token, weight=rm_weight, debug=debug)
 
     # too long seqlen
@@ -75,13 +76,7 @@ def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_s
 def main(args):
     run_configs = check_valid_args(args)
     hf_cache=None
-    if run_configs["cache_dir"] is not None:
-        hf_home = run_configs["cache_dir"]
-        hf_cache = os.path.join(run_configs["cache_dir"], "hub")
-        os.environ['HF_HOME'] = hf_home
-        os.environ['HF_HUB_CACHE'] = hf_cache
-
-    print(f"[INFO]: Loaded {len(run_configs)} run configs.")
+    # print(f"[INFO]: Loaded {len(run_configs)} run configs.")
     print(f"[DEBUG]: {run_configs=}")
 
     print(f"[INFO]: Loading dataset ({args.dataset=}, {args.split=})")
@@ -106,14 +101,19 @@ def main(args):
 
     if args.task_type == "direct":
         TQ = TQ_direct
-    else:
+    elif args.task_type == "indirect":
         TQ = TQ_indirect
+    elif args.task_type == "collab":
+        TQ = Collaborative_TQ_indirect
+    else:
+        print(f"ERROR, unknown task type {args.task_type}")
+        exit()
 
     print(f"{len(truncated_ds)=}")
 
     print(f"[INFO]: Loading models ({run_configs['llm']}, {run_configs['rm']})")
-    search = TQ(llm_path=run_configs['llm'], reward_model=run_configs['rm'],
-                llm_device=args.llm_gpu, rm_device=args.rm_gpu, cache_dir=hf_cache)
+    search = TQ(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
+                llm_device=args.llm_gpu, rm_device=args.rm_gpu)
     print(f"[INFO]: Done")
 
     config_num = 0
@@ -156,7 +156,7 @@ def main(args):
         data.append({"prompt": current_prompt, "result": res, "response": current_prompt + res, "elapsed":elapsed, "method": args.out_file + f"_{config_num}"})
         print(f"[DEBUG]: {elapsed=} {len(current_prompt)=} {current_prompt=}, {res=}")
         with open(Path(args.out_file + f"_{config_num}.jsonl"), "w") as outfile:
-            json.dump(data, outfile, ensure_ascii=False)
+            json.dump(data, outfile, indent=4, ensure_ascii=False)
 
 
 if __name__=="__main__":
@@ -167,7 +167,7 @@ if __name__=="__main__":
     parser.add_argument("--run_percent", type=float, default=100.)
     parser.add_argument("--rm", type=str)
     parser.add_argument("--llm", type=str)
-    parser.add_argument("--max_new_token", type=int, default=128)
+    parser.add_argument("--max_new_token", type=int, default=128) # 128
 
     parser.add_argument("--llm_gpu", type=str, default="cuda:0")
     parser.add_argument("--rm_gpu", type=str, default="cuda:1")
@@ -180,6 +180,9 @@ if __name__=="__main__":
     args = parser.parse_args()
 
     print(f"{args=}")
+    # hf_home = "/fs/nexus-scratch/jianyu34/.cache/huggingface"
+    # hf_cache = os.path.join(hf_home, "hub")
+
     # for i in range(torch.cuda.device_count()):
     #     print(torch.cuda.get_device_properties(i).name)
     main(args)
