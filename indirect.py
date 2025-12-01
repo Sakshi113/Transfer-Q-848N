@@ -7,7 +7,6 @@ np.random.seed(42)
 torch.manual_seed(42)
 import time
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification
-import textwrap
 import re
 import copy
 
@@ -41,14 +40,14 @@ def even_chunk(data, chunk_size=10):
         yield data[i:(i+chunk_size)]
 
 
-class TQ_indirect:
+class TQ_indirect():
     def __init__(self, llm_path="lomahony/eleuther-pythia6.9b-hh-dpo",
                  rm_path="usvsnsp/pythia-6.9b-rm-full-hh-rlhf",
+                 rm2_path="usvsnsp/pythia-6.9b-rm-full-hh-rlhf",
                  llm_device="cuda:0",
                  rm_device="cuda:1",
                  rm_dev_2=None,
                  torch_dtype=torch.float16):
-        print("Loading Indirect Transfer Code")
         if rm_dev_2 is None:
             rm_dev_2 = rm_device
         self.llm_dev = llm_device
@@ -56,6 +55,11 @@ class TQ_indirect:
         self.rm_dev_2 = rm_dev_2
         self.llm_path = llm_path
         self.rm_path = rm_path
+        self.rm2_path = rm2_path
+        if rm_path == rm2_path:
+            self.copy_rm = True
+        else:
+            self.copy_rm = False
 
         print("Loading LLM...")
         start = time.time()
@@ -63,21 +67,25 @@ class TQ_indirect:
         self.LLM.eval()
         print(f"LLM loaded in : {time.time() - start : .2f}")
 
-        print(f"Loading tokenizer...")
-        start = time.time()
         self.tokenizer = AutoTokenizer.from_pretrained(llm_path, padding_side='left')
-        print(f"tokenizer loaded in : {time.time() - start : .2f}")
-
         print("Loading RMs...")
         start = time.time()
         self.RM_1 = AutoModelForSequenceClassification.from_pretrained(rm_path, num_labels=1, torch_dtype=torch_dtype).to(self.rm_dev_1)
-        self.RM_2 = copy.deepcopy(self.RM_1).to(self.rm_dev_2)
+        if self.copy_rm:
+            self.RM_2 = copy.deepcopy(self.RM_1).to(self.rm_dev_2)
+        else:
+            self.RM_2 = AutoModelForSequenceClassification.from_pretrained(rm2_path, num_labels=1,
+                                                                           torch_dtype=torch_dtype).to(rm_dev_2)
+
         self.RM_1.eval()
         self.RM_2.eval()
-
         # "weqweasdas/hh_rlhf_rm_open_llama_3b"
         self.reward_tokenizer_1 = AutoTokenizer.from_pretrained(rm_path, padding_side='left')
-        self.reward_tokenizer_2 = copy.deepcopy(self.reward_tokenizer_1)
+        if self.copy_rm:
+            self.reward_tokenizer_2 = copy.deepcopy(self.reward_tokenizer_1)
+        else:
+            self.reward_tokenizer_2 = AutoTokenizer.from_pretrained(rm2_path, padding_side='left')
+
 
         self.reward_tokenizer_1.pad_token = self.reward_tokenizer_1.eos_token
         self.reward_tokenizer_2.pad_token = self.reward_tokenizer_2.eos_token
