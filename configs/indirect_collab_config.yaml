@@ -4,6 +4,7 @@
 "mode": "greedy"
 "sample_temp": null
 "debug" : False
+"max_iters": 5
 # specifying model names
 #"llm": "lomahony/eleuther-pythia6.9b-hh-dpo"
 "llm": "Salesforce/LLaMA-3-8B-SFR-Iterative-DPO-R"

@@ -107,45 +107,54 @@ class Orchestrator:
         return orches_res
 
 class AgenticTQ:
-    def __init__(self, llm_path, rm_path, rm2_path, llm_dev, rm_dev, rm2_dev, max_iters=5):
-        self.tq = TQ_indirect(llm_path, rm_path, rm2_path, llm_device=llm_dev,
+    def __init__(self, llm_path, rm_path, rm2_path, llm_device, rm_dev, rm2_dev, max_iters=5):
+        self.tq = TQ_indirect(llm_path, rm_path, rm2_path, llm_device=llm_device,
                               rm_device=rm_dev, rm_dev_2=rm2_dev, torch_dtype=torch.float16)
         self.tokenizer = self.tq.tokenizer
         self.worker = Worker_TQ(self.tq)
         self.critic = Critic_TQ(self.tq)
-        self.orchestrator = Orchestrator(self.tq, device=llm_dev)
+        self.orchestrator = Orchestrator(self.tq, device=llm_device)
         self.max_iters = max_iters
 
-    def generate(self, user_prompt, **gen_kwargs):
+    def generate(self, user_prompt, verbose=True, **gen_kwargs):
+        response_dict = {}
+        scores_dict = {}
         for step in range(self.max_iters):
 
-            print(f"\n===== STEP {step+1} =====")
-
+            if verbose: print(f"\n===== STEP {step} =====")
+            response_dict[step] = {}
+            scores_dict[step] = {}
             # Worker
             worker_res, worker_scores = self.worker.generate(user_prompt, **gen_kwargs)
-            print("[Worker Output]:", worker_res)
+            response_dict[step]["worker"] = worker_res
+            scores_dict[step]["worker"] = worker_scores
+            if verbose: print("[Worker Output]:", worker_res)
 
             # Critic
             critic_res, critic_scores = self.critic.score(
                 user_prompt, worker_res, **gen_kwargs
             )
-            print("[Critic Output]:", critic_res)
+            response_dict[step]["critic"] = critic_res
+            scores_dict[step]["critic"] = critic_scores
+            if verbose: print("[Critic Output]:", critic_res)
 
             # Orchestrator
             decision = self.orchestrator.decide(
                 user_prompt, worker_res, critic_res
             )
-            print("[Orchestrator Decision]:", decision)
+            response_dict[step]["Orchestrator"] = decision
+            if verbose: print("[Orchestrator Decision]:", decision)
 
             if "ACCEPTED" in decision:
-                print("\n Safe -> Final answer found\n")
-                return worker_res, worker_scores
+                if verbose: print("\n Safe -> Final answer found\n")
+                return response_dict, scores_dict
 
             elif "REGENERATE" in decision:
-                print("\n Unsafe -> Regenerating...\n")
+                if verbose: print("\n Unsafe -> Regenerating...\n")
                 continue
 
-        return "Failed to generate safe answer."    
+        if verbose: print("Failed to generate safe answer.")
+        return None
             
         
         

@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from direct import TQ_direct
 from indirect import TQ_indirect
-from collaborative_indirect import Collaborative_TQ_indirect
+from collaborative_indirect import AgenticTQ
 import time
 import pickle
 import torch
@@ -18,8 +18,8 @@ torch.manual_seed(42)
 
 def check_valid_args(args):
     if args.recover:
-        print("[INFO]: LOOKS LIKE YOU WANT TO RECOVER SOME RESULTS,")
-        print("[INFO]: MAKE SURE ALL COMMANDLINE ARGS ARE EXACTLY THE SAME!!!")
+        print("LOOKS LIKE YOU WANT TO RECOVER SOME RESULTS,")
+        print("MAKE SURE ALL COMMANDLINE ARGS ARE EXACTLY THE SAME!!!")
         input("PRESS ENTER TO CONTINUE")
 
     if not (args.max_new_token > 0):
@@ -45,6 +45,15 @@ def check_valid_args(args):
 
     with open(cfg_path, 'r') as f:
         run_configs = yaml.load(f, Loader=yaml.SafeLoader)
+    run_configs['dataset'] = args.dataset
+    run_configs['split'] = args.split
+    run_configs['run_percent'] = args.run_percent
+    run_configs['max_new_token'] = args.max_new_token
+    run_configs['llm_gpu'] = args.llm_gpu
+    run_configs['rm_gpu'] = args.rm_gpu
+    run_configs['rm2_gpu'] = args.rm2_gpu
+    run_configs['config'] = args.config
+    run_configs['task_type'] = args.task_type
 
     # validate configs
     if "rm_weight" not in run_configs:
@@ -78,10 +87,10 @@ def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_s
 def main(args):
     run_configs = check_valid_args(args)
     hf_cache=None
-    # print(f"[INFO]: Loaded {len(run_configs)} run configs.")
-    print(f"[DEBUG]: {run_configs=}")
+    # print(f"Loaded {len(run_configs)} run configs.")
+    print(f"{run_configs=}")
 
-    print(f"[INFO]: Loading dataset ({args.dataset=}, {args.split=})")
+    print(f"Loading dataset ({args.dataset=}, {args.split=})")
     test_ds = load_dataset(args.dataset, split=args.split)
     if args.dataset == "Dahoas/full-hh-rlhf":
         # FOR HHRLHF
@@ -97,35 +106,33 @@ def main(args):
 
 
     end_idx = int(len(test_ds) * (args.run_percent/100.))
-    print(f"[INFO]: {end_idx=}, {len(test_ds)=}")
+    print(f"{end_idx=}, {len(test_ds)=}")
 
     truncated_ds = test_ds[0:end_idx]
     if args.task_type == "direct":
-        print(f"[INFO]: Loading models ({run_configs['llm']}, {run_configs['rm']})")
+        print(f"Loading models ({run_configs['llm']}, {run_configs['rm']})")
         search = TQ_direct(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
                            llm_device=args.llm_gpu, rm_device=args.rm_gpu)
     elif args.task_type == "indirect":
-        print(f"[INFO]: Loading models ({run_configs['llm']}, {run_configs['rm']})")
+        print(f"Loading models ({run_configs['llm']}, {run_configs['rm']})")
         search = TQ_indirect(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
                              llm_device=args.llm_gpu, rm_device=args.rm_gpu)
     elif args.task_type == "collab":
-        print(f"[INFO]: Loading models ({run_configs['llm']}, {run_configs['rm']})")
-        search = Collaborative_TQ_indirect(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
-                                           rm2_path=run_configs['rm2'],
-                                           llm_device=args.llm_gpu, rm_device=args.rm_gpu)
+        print(f"Loading models ({run_configs['llm']}, {run_configs['rm']})")
+        search = AgenticTQ(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
+                           rm2_path=run_configs['rm2'], llm_device=args.llm_gpu,
+                           rm_dev=args.rm_gpu, rm2_dev=args.rm2_gpu,
+                           max_iters=run_configs['max_iters'])
     else:
         print(f"ERROR, unknown task type {args.task_type}")
         exit()
 
     print(f"{len(truncated_ds)=}")
 
-
-    print(f"[INFO]: Done")
-
     config_num = 0
-    data = []
+    data = {"run_configs": run_configs}
     if args.recover and Path(args.out_file + f"_{config_num}.jsonl").exists():
-        print(f"[INFO]: Run already exists, checking if it's done")
+        print(f"Run already exists, checking if it's done")
         resfile = open(Path(args.out_file + f"_{config_num}.jsonl"))
         samples = resfile.readlines()
 
@@ -135,13 +142,13 @@ def main(args):
 
         last_obj = json.loads(samples[-2])
         if last_obj["prompt"] != truncated_ds[len(samples) -1]:
-            print(f"[INFO]: PROMPTS DID NOT MATCH RECOVERY FAILED!!!")
+            print(f"PROMPTS DID NOT MATCH RECOVERY FAILED!!!")
             exit(1)
 
     score_overall = []
     for idx, ds_row in enumerate(tqdm(truncated_ds)):
         if args.recover and (idx <= len(samples) -1):
-            print(f"[INFO]: SKIPPING {idx}")
+            print(f"SKIPPING {idx}")
             continue
 
         print(f"{ds_row=}")
@@ -153,16 +160,23 @@ def main(args):
                                         run_configs["mode"], run_configs["sample_temp"],
                                         llm_dev=args.llm_gpu, debug=run_configs['debug'])
         score_overall.append(scores)
-        if tokens == None:
+        if tokens is None:
             print("Too long, skipped")
             continue
 
-        elapsed = time.time() -start
-
-        data.append({"prompt": current_prompt, "result": res, "response": current_prompt + res, "elapsed":elapsed, "method": args.out_file + f"_{config_num}"})
+        elapsed = time.time() - start
+        data[idx] = {"prompt": current_prompt, "result": res, "response": current_prompt + res,
+                     "elapsed":elapsed, "method": args.out_file + f"_{config_num}"}
         print(f"[DEBUG]: {elapsed=} {len(current_prompt)=} {current_prompt=}, {res=}")
-        with open(Path(args.out_file + f"_{config_num}.jsonl"), "w") as outfile:
-            json.dump(data, outfile, indent=4, ensure_ascii=False)
+        # saving periodically in case we lose progress:
+        if idx % 10 == 0:
+            json_save_path = f"{args.out_file}_{config_num}.jsonl"
+            print(f"saving outputs to {json_save_path}")
+            start = time.time()
+            with open(Path(json_save_path), "w") as outfile:
+                json.dump(data, outfile, indent=4, ensure_ascii=False)
+            elapsed = time.time() - start
+            print(f"json save time: {elapsed:.3f}")
 
 
 if __name__=="__main__":
@@ -170,11 +184,12 @@ if __name__=="__main__":
     parser.add_argument("--dataset", type=str, default="Dahoas/full-hh-rlhf")
     parser.add_argument("--split", type=str, default="test")
 
-    parser.add_argument("--run_percent", type=float, default=100.)
+    parser.add_argument("--run_percent", type=float, default=5.)
     parser.add_argument("--max_new_token", type=int, default=128) # 128
 
     parser.add_argument("--llm_gpu", type=str, default="cuda:0")
     parser.add_argument("--rm_gpu", type=str, default="cuda:1")
+    parser.add_argument("--rm2_gpu", type=str, default="cuda:2")
     parser.add_argument("--recover", action='store_true', default=False)
 
     # parser.add_argument("--config", type=str, default="configs/direct_config.yaml")
@@ -191,7 +206,7 @@ if __name__=="__main__":
     args = parser.parse_args()
 
     print(f"{args=}")
-    # hf_home = "/fs/nexus-scratch/jianyu34/.cache/huggingface"
+    # HF_HOME=/fs/nexus-scratch/jianyu34/.cache/huggingface/
     # hf_cache = os.path.join(hf_home, "hub")
 
     # for i in range(torch.cuda.device_count()):
