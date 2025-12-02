@@ -226,7 +226,6 @@ class TQ_indirect():
         scores = []
         rm_cached = None
         cached = None
-        print(f"Max new tokens  = {max_new_token}")
         iterator_obj = range(max_new_token)
         if debug: iterator_obj = tqdm(iterator_obj)
         for _ in iterator_obj:

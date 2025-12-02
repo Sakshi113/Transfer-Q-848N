@@ -16,13 +16,20 @@ pip install -r requirements.txt
 # For direct transfer tasks on HH-RLHF dataset run the following command:
 
 ```
-python collect_model_outs.py --run_percent 100. --config="example.config" --out_file="run_outs/example_out" --dataset="Dahoas/full-hh-rlhf" --task_type direct
+python collect_model_outs.py --config="configs/direct_config.yaml" --task_type="direct" --dataset="Dahoas/full-hh-rlhf"
 ```
 
 # For indirect transfer tasks on HH-RLHF run the following command:
 
 ```
-python collect_model_outs.py --run_percent 100. --config="example.config" --out_file="run_outs/example_out" --dataset="Dahoas/full-hh-rlhf" --task_type indirect
+python collect_model_outs.py --config="configs/indirect_config.yaml" --task_type="indirect" --dataset="Dahoas/full-hh-rlhf"
+```
+
+# For collaborative indirect transfer task:
+
+```
+python collect_model_outs.py --config="configs/indirect_collab_config.yaml" --task_type="collab" --dataset="Dahoas/full-hh-rlhf"
+
 ```
 # To measure reward of generated responses run the following command:
 
@@ -32,18 +39,18 @@ python measure_reward.py --out_file="run_outs/example_out_0.jsonl"
 
 ## References
 
-The codebase has been adapted from [ARGS](https://github.com/deeplearning-wisc/args).
+The codebase has been adapted from [TransferQ](https://github.com/Soumya1612-Rasha/Transfer-Q).
 
 ## For bibtex citation 
 
 ```
-@misc{chakraborty2024transferqstarprincipled,
-      title={Transfer Q Star: Principled Decoding for LLM Alignment}, 
+@misc{TBD,
+      title={...}, 
       author={Souradip Chakraborty and Soumya Suvra Ghosal and Ming Yin and Dinesh Manocha and Mengdi Wang and Amrit Singh Bedi and Furong Huang},
-      year={2024},
-      eprint={2405.20495},
+      year={2026},
+      eprint={},
       archivePrefix={arXiv},
       primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2405.20495}, 
+      url={...}, 
 }
 ```

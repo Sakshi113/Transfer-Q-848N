@@ -121,7 +121,7 @@ class AgenticTQ:
         scores_dict = {}
         for step in range(self.max_iters):
 
-            if verbose: print(f"\n===== STEP {step} =====")
+            if verbose: print(f"===== STEP {step} =====")
             response_dict[step] = {}
             scores_dict[step] = {}
             # Worker
@@ -146,15 +146,15 @@ class AgenticTQ:
             if verbose: print("[Orchestrator Decision]:", decision)
 
             if "ACCEPTED" in decision:
-                if verbose: print("\n Safe -> Final answer found\n")
+                if verbose: print("Safe -> Final answer found\n")
                 return response_dict, scores_dict
 
             elif "REGENERATE" in decision:
-                if verbose: print("\n Unsafe -> Regenerating...\n")
+                if verbose: print("Unsafe -> Regenerating...\n")
                 continue
 
         if verbose: print("Failed to generate safe answer.")
-        return None
+        return None, None
             
         
         

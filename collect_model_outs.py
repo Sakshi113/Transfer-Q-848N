@@ -78,6 +78,9 @@ def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_s
     # too long seqlen
     if tokens is None: return None, None
 
+    if type(tokens) == dict:
+        # only collaborative TQ gives out dict that is already in text form...
+        return tokens, 0, scores
     raw_tokens = tokens[0].detach().cpu().numpy().tolist()
     tokens_text = search.tokens_to_text(tokens)[0]
     del tokens
@@ -86,6 +89,8 @@ def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_s
 
 def main(args):
     run_configs = check_valid_args(args)
+    config_num=0
+    json_save_path = f"{args.out_file}_{config_num}.jsonl"
     hf_cache=None
     # print(f"Loaded {len(run_configs)} run configs.")
     print(f"{run_configs=}")
@@ -129,7 +134,6 @@ def main(args):
 
     print(f"{len(truncated_ds)=}")
 
-    config_num = 0
     data = {"run_configs": run_configs}
     if args.recover and Path(args.out_file + f"_{config_num}.jsonl").exists():
         print(f"Run already exists, checking if it's done")
@@ -151,7 +155,8 @@ def main(args):
             print(f"SKIPPING {idx}")
             continue
 
-        print(f"{ds_row=}")
+        print(f"ds_row:")
+        print(f"{ds_row}")
         current_prompt = ds_row
         start = time.time()
 
@@ -165,18 +170,20 @@ def main(args):
             continue
 
         elapsed = time.time() - start
-        data[idx] = {"prompt": current_prompt, "result": res, "response": current_prompt + res,
+        data[idx] = {"prompt": current_prompt, "response": res,
                      "elapsed":elapsed, "method": args.out_file + f"_{config_num}"}
         print(f"[DEBUG]: {elapsed=} {len(current_prompt)=} {current_prompt=}, {res=}")
         # saving periodically in case we lose progress:
         if idx % 10 == 0:
-            json_save_path = f"{args.out_file}_{config_num}.jsonl"
             print(f"saving outputs to {json_save_path}")
             start = time.time()
             with open(Path(json_save_path), "w") as outfile:
                 json.dump(data, outfile, indent=4, ensure_ascii=False)
             elapsed = time.time() - start
             print(f"json save time: {elapsed:.3f}")
+    with open(Path(json_save_path), "w") as outfile:
+        json.dump(data, outfile, indent=4, ensure_ascii=False)
+        print(f"run output saved to {json_save_path}")
 
 
 if __name__=="__main__":
