@@ -5,9 +5,10 @@ from tqdm import tqdm
 import numpy as np
 np.random.seed(42)
 torch.manual_seed(42)
-import transformers
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification, LlamaForCausalLM, LlamaForSequenceClassification
-import pdb
+import time
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification
+import re
+import copy
 
 
 def factors(x):
@@ -39,34 +40,56 @@ def even_chunk(data, chunk_size=10):
         yield data[i:(i+chunk_size)]
 
 
-class TQ_indirect:
-    def __init__(self, llm_path, rm_path, llm_dev="cuda:0", rm_dev="cuda:1", torch_dtype=torch.float16):
-        print("Loading Indirect Transfer Code")
-        self.llm_dev = llm_dev
-        self.rm_dev_1 = "cuda:1"
-        self.rm_dev_2 = "cuda:1"
-       
-        print("Loading LLM...")
-        self.LLM = AutoModelForCausalLM.from_pretrained("lomahony/eleuther-pythia6.9b-hh-dpo", torch_dtype=torch_dtype).to('cuda:0')
-        self.LLM.eval()
-        
+class TQ_indirect():
+    def __init__(self, llm_path="lomahony/eleuther-pythia6.9b-hh-dpo",
+                 rm_path="usvsnsp/pythia-6.9b-rm-full-hh-rlhf",
+                 rm2_path="usvsnsp/pythia-6.9b-rm-full-hh-rlhf",
+                 llm_device="cuda:0",
+                 rm_device="cuda:1",
+                 rm_dev_2=None,
+                 torch_dtype=torch.float16):
+        if rm_dev_2 is None:
+            rm_dev_2 = rm_device
+        self.llm_dev = llm_device
+        self.rm_dev_1 = rm_device
+        self.rm_dev_2 = rm_dev_2
+        self.llm_path = llm_path
+        self.rm_path = rm_path
+        self.rm2_path = rm2_path
+        if rm_path == rm2_path:
+            self.copy_rm = True
+        else:
+            self.copy_rm = False
 
-        self.tokenizer = AutoTokenizer.from_pretrained("lomahony/eleuther-pythia6.9b-hh-dpo")
-        print("Loading RM...")
-        
-        self.RM_1 = AutoModelForSequenceClassification.from_pretrained("usvsnsp/pythia-6.9b-rm-full-hh-rlhf", num_labels=1, torch_dtype=torch_dtype).to('cuda:1')
-        self.RM_2 = AutoModelForSequenceClassification.from_pretrained("usvsnsp/pythia-6.9b-rm-full-hh-rlhf", num_labels=1, torch_dtype=torch_dtype).to('cuda:1')
-    
-        # "weqweasdas/hh_rlhf_rm_open_llama_3b"
-        self.RM_2 = self.RM_2.to("cuda:1")
-        self.reward_tokenizer_1 = AutoTokenizer.from_pretrained("usvsnsp/pythia-6.9b-rm-full-hh-rlhf")
-        self.reward_tokenizer_2 = AutoTokenizer.from_pretrained("usvsnsp/pythia-6.9b-rm-full-hh-rlhf")
+        print("Loading LLM...")
+        start = time.time()
+        self.LLM = AutoModelForCausalLM.from_pretrained(llm_path, torch_dtype=torch_dtype).to(self.llm_dev)
+        self.LLM.eval()
+        print(f"LLM loaded in : {time.time() - start : .2f}")
+
+        self.tokenizer = AutoTokenizer.from_pretrained(llm_path, padding_side='left')
+        print("Loading RMs...")
+        start = time.time()
+        self.RM_1 = AutoModelForSequenceClassification.from_pretrained(rm_path, num_labels=1, torch_dtype=torch_dtype).to(self.rm_dev_1)
+        if self.copy_rm:
+            self.RM_2 = copy.deepcopy(self.RM_1).to(self.rm_dev_2)
+        else:
+            self.RM_2 = AutoModelForSequenceClassification.from_pretrained(rm2_path, num_labels=1,
+                                                                           torch_dtype=torch_dtype).to(rm_dev_2)
 
         self.RM_1.eval()
         self.RM_2.eval()
+        # "weqweasdas/hh_rlhf_rm_open_llama_3b"
+        self.reward_tokenizer_1 = AutoTokenizer.from_pretrained(rm_path, padding_side='left')
+        if self.copy_rm:
+            self.reward_tokenizer_2 = copy.deepcopy(self.reward_tokenizer_1)
+        else:
+            self.reward_tokenizer_2 = AutoTokenizer.from_pretrained(rm2_path, padding_side='left')
+
+
         self.reward_tokenizer_1.pad_token = self.reward_tokenizer_1.eos_token
         self.reward_tokenizer_2.pad_token = self.reward_tokenizer_2.eos_token
-
+        print(f"RMs loaded in : {time.time() - start : .2f}")
         
     def get_input_ids(self, prompt: str) -> torch.Tensor:
         tokens = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.llm_dev)
@@ -121,9 +144,22 @@ class TQ_indirect:
         return current_best_tokens, new_rm_cached
         
     def generate_step(self, mout, input_ids, pre_screen_beam_width=40, weight=0., method="greedy", temperature=0.7, debug=True, scores=[]):
+        """
+
+        :param mout:
+        :param input_ids:
+        :param pre_screen_beam_width:
+        :param weight:
+        :param method:
+        :param temperature:
+        :param debug:
+        :param scores:
+        :return:
+        """
         out_logits = mout.logits[:, -1]
-    
+        # pick top k possible next words
         prescreen_logits, prescreen_tokens = torch.topk(out_logits, dim=-1, k=pre_screen_beam_width)
+        # stack next word with the context so far:
         expanded_tis = torch.unsqueeze(input_ids, 1).repeat(1, pre_screen_beam_width, 1)
         if debug: print(f"{expanded_tis.shape=}")
 
@@ -133,32 +169,30 @@ class TQ_indirect:
         if debug: print(f"{out_logits.shape[0] * pre_screen_beam_width=}")
         flat_trme = to_rm_eval.view(out_logits.shape[0] * pre_screen_beam_width, -1)
         if debug: print(f"{flat_trme.shape=}")
-        flat_trme_ext = self.LLM.generate(flat_trme, max_new_tokens=5)
+        flat_trme_ext = self.LLM.generate(flat_trme, max_new_tokens=5, pad_token_id=self.tokenizer.eos_token_id)
        
         output = [self.tokenizer.decode(r.squeeze()) for r in flat_trme_ext]
         texts_tokens_1 = self.reward_tokenizer_1(output, return_tensors='pt', padding=True)
         texts_tokens_2 = self.reward_tokenizer_2(output, return_tensors='pt', padding=True)
         for key, value in texts_tokens_1.items():
-                 texts_tokens_1[key] = value.to('cuda:1')
+                 texts_tokens_1[key] = value.to(self.rm_dev_1)
 
         for key, value in texts_tokens_2.items():
-                 texts_tokens_2[key] = value.to('cuda:1')
+                 texts_tokens_2[key] = value.to(self.rm_dev_2)
 
         outputs_1 = self.RM_1(**texts_tokens_1)
         outputs_2 = self.RM_2(**texts_tokens_2)
         rm_out_1 = outputs_1
         rm_out_2 = outputs_2
 
-
         rewards_1 = rm_out_1.logits.flatten().to(self.llm_dev)
         rewards_2 = rm_out_2.logits.flatten().to(self.llm_dev)
 
-        
         del rm_out_1
         del rm_out_2
 
         delta = rewards_2 - rewards_1
-        rewards = torch.exp(0.5 * delta).to("cuda:0") * rewards_2
+        rewards = torch.exp(0.5 * delta).to(self.llm_dev) * rewards_2
         new_scores = rewards * weight + prescreen_logits.flatten()
 
         if method == "greedy":
@@ -192,18 +226,18 @@ class TQ_indirect:
         scores = []
         rm_cached = None
         cached = None
-        print(f"Max new tokens  = {max_new_token}")
         iterator_obj = range(max_new_token)
         if debug: iterator_obj = tqdm(iterator_obj)
         for _ in iterator_obj:
             if debug: print(f"{type(cached)=}")
             if debug: print(f"{type(rm_cached)=}")
             with torch.no_grad():
+                attn_mask = create_attention_mask(tokens.shape[1], tokens.shape[0]).to(self.llm_dev)
                 if cached is None:
-                    mout = self.LLM(**self.LLM.prepare_inputs_for_generation(input_ids=tokens, attention_mask=create_attention_mask(tokens.shape[1], tokens.shape[0]).to(self.llm_dev), past_key_values=None, use_cache=True))
+                    mout = self.LLM(**self.LLM.prepare_inputs_for_generation(input_ids=tokens, attention_mask=attn_mask, past_key_values=None, use_cache=True))
                     cached = mout.past_key_values
                 else:
-                    mout = self.LLM(**self.LLM.prepare_inputs_for_generation(input_ids=tokens, attention_mask=create_attention_mask(tokens.shape[1], tokens.shape[0]).to(self.llm_dev), past_key_values=cached, use_cache=True))
+                    mout = self.LLM(**self.LLM.prepare_inputs_for_generation(input_ids=tokens, attention_mask=attn_mask, past_key_values=cached, use_cache=True))
                     cached = mout.past_key_values
                 
                 if method == "greedy_large":
