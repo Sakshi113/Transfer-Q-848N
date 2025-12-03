@@ -51,13 +51,9 @@ class TQ_direct:
         start = time.time()
         self.LLM = AutoModelForCausalLM.from_pretrained(self.llm_path, torch_dtype=torch_dtype).to(self.llm_dev)
         self.LLM.eval()
-        print(f"LLM loaded in : {time.time() - start : .2f}")
-
-        print(f"Loading tokenizer...")
-        start = time.time()
         self.tokenizer = AutoTokenizer.from_pretrained(self.llm_path, padding_side='left')
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        print(f"tokenizer loaded in : {time.time() - start : .2f}")
+        print(f"LLM loaded in : {time.time() - start : .2f}")
 
         print("Loading RM...")
         start = time.time()
@@ -71,9 +67,6 @@ class TQ_direct:
     def get_input_ids(self, prompt: str) -> torch.Tensor:
         tokens = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.llm_dev)
         return tokens
-    
-    def tokens_to_text(self, tokens: torch.Tensor) -> List[str]:
-        return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)
     
     def generate_greedy_step_large(self, mout, input_ids, pre_screen_beam_width=40, weight=0., rm_cached=None, chunk_size=10, debug=True, _use_cache=True):
         out_logits = mout.logits[:, -1]
@@ -189,8 +182,13 @@ class TQ_direct:
 
         return flat_trme[top_k_ids], scores
     
-    def generate(self, prompt, weight=0., topk=1, max_new_token=128, method="greedy", temperature=0.7, chunk_size=5, debug=False):
-        tokens = self.get_input_ids(prompt)
+    def generate(self, prompt, weight=0., topk=1, max_new_token=128, method="greedy", temperature=0.7, chunk_size=5, align=True, debug=False):
+        tokens = self.tokenizer(prompt, return_tensors="pt").to(self.llm_dev)
+        if not align:
+            tokens = self.LLM.generate(**tokens, max_new_tokens=max_new_token)
+            scores = 1
+            return tokens, scores
+        tokens = tokens.input_ids.to(self.llm_dev)
         initial_len = tokens.shape[-1]
         if chunk_size == "auto":
             chunk_size = auto_size(initial_len + max_new_token, topk)
@@ -214,12 +212,8 @@ class TQ_direct:
             if debug: print(f"{type(rm_cached)=}")
             with torch.no_grad():
                 attn_mask = create_attention_mask(tokens.shape[1], tokens.shape[0]).to(self.llm_dev)
-                if cached is None:
-                    mout = self.LLM(**self.LLM.prepare_inputs_for_generation(input_ids=tokens, attention_mask=attn_mask, past_key_values=None, use_cache=True) )
-                    cached = mout.past_key_values
-                else:
-                    mout = self.LLM(**self.LLM.prepare_inputs_for_generation(input_ids=tokens, attention_mask=attn_mask, past_key_values=cached, use_cache=True))
-                    cached = mout.past_key_values
+                mout = self.LLM(**self.LLM.prepare_inputs_for_generation(input_ids=tokens, attention_mask=attn_mask, past_key_values=cached, use_cache=True) )
+                cached = mout.past_key_values
                 """
                 mout['logits'].shape = torch.Size([1, 39, 50432])
                 mout['past_key_values']: 32 tuples, in each, size 2 tuple each with shape (1, 32, 39, 128)

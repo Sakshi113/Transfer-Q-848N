@@ -4,6 +4,7 @@
 "mode": "greedy"
 "sample_temp": null
 "debug" : False
+"align" : True
 "max_iters": 5
 # specifying model names
 #"llm": "lomahony/eleuther-pythia6.9b-hh-dpo"

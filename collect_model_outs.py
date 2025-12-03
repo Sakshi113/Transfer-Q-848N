@@ -72,8 +72,9 @@ def check_valid_args(args):
     print(f"[ !! ] Please Double Check: task type {args.task_type}, loading config from {args.config}")
     return run_configs
 
-def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_sigmoid_mixing", sample_temp=None, llm_dev:str="cuda:0", debug=True):
-    tokens, scores = search.generate(prompt, method=mode, topk=topk, max_new_token=new_token, weight=rm_weight, debug=debug)
+def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_sigmoid_mixing", sample_temp=None, llm_dev:str="cuda:0",
+              debug=True, align=True):
+    tokens, scores = search.generate(prompt, method=mode, topk=topk, max_new_token=new_token, weight=rm_weight, align=align, debug=debug)
 
     # too long seqlen
     if tokens is None: return None, None
@@ -81,11 +82,10 @@ def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_s
     if type(tokens) == dict:
         # only collaborative TQ gives out dict that is already in text form...
         return tokens, 0, scores
-    raw_tokens = tokens[0].detach().cpu().numpy().tolist()
-    tokens_text = search.tokens_to_text(tokens)[0]
+    tokens_text = search.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
     del tokens
-    tokens_text_np = tokens_text.removeprefix(prompt)
-    return tokens_text_np, raw_tokens, scores
+    text_response = tokens_text.removeprefix(prompt)
+    return text_response, tokens, scores
 
 def main(args):
     run_configs = check_valid_args(args)
@@ -150,6 +150,8 @@ def main(args):
             exit(1)
 
     score_overall = []
+    if run_configs['align'] is False:
+        print(f"WARNING you are running {run_configs['align']} so no alignment will be conducted.")
     for idx, ds_row in enumerate(tqdm(truncated_ds)):
         if args.recover and (idx <= len(samples) -1):
             print(f"SKIPPING {idx}")
@@ -163,7 +165,7 @@ def main(args):
         res, tokens, scores = runprompt(search, current_prompt, float(run_configs["rm_weight"]),
                                         run_configs["topk"], args.max_new_token,
                                         run_configs["mode"], run_configs["sample_temp"],
-                                        llm_dev=args.llm_gpu, debug=run_configs['debug'])
+                                        llm_dev=args.llm_gpu, debug=run_configs['debug'], align=run_configs['align'])
         score_overall.append(scores)
         if tokens is None:
             print("Too long, skipped")
@@ -199,14 +201,14 @@ if __name__=="__main__":
     parser.add_argument("--rm2_gpu", type=str, default="cuda:2")
     parser.add_argument("--recover", action='store_true', default=False)
 
-    # parser.add_argument("--config", type=str, default="configs/direct_config.yaml")
-    # parser.add_argument("--task_type", default="direct", type=str)
+    parser.add_argument("--config", type=str, default="configs/direct_config.yaml")
+    parser.add_argument("--task_type", default="direct", type=str)
 
     # parser.add_argument("--config", type=str, default="configs/indirect_config.yaml")
     # parser.add_argument("--task_type", default="indirect", type=str)
 
-    parser.add_argument("--config", type=str, default="configs/indirect_collab_config.yaml")
-    parser.add_argument("--task_type", default="collab", type=str)
+    # parser.add_argument("--config", type=str, default="configs/indirect_collab_config.yaml")
+    # parser.add_argument("--task_type", default="collab", type=str)
 
     parser.add_argument("--out_file", type=str, default="run_outs/example_out")
 

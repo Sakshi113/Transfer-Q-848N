@@ -3,70 +3,63 @@ import argparse
 import torch
 import json
 import re
-import os 
-import pdb
+import time
 import numpy as np
 from tqdm import tqdm
 np.random.seed(42)
 torch.manual_seed(42)
-parser = argparse.ArgumentParser()
-parser.add_argument("--out_file", type=str)
 
 
-args = parser.parse_args()
-model_name = "usvsnsp/pythia-6.9b-rm-full-hh-rlhf"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-tokenizer.pad_token = tokenizer.eos_token
+def main(args):
+    start = time.time()
+    model_name = args.model_name
+    print(f"Loading model {model_name} ...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.pad_token = tokenizer.eos_token
+    rm_model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1,
+                                                                  torch_dtype=torch.float16).to(args.device)
+    rm_model = rm_model.to(args.device)
+    rm_model.eval()
+    print(f"model loaded in : {time.time() - start :.2f}")
+    with open(args.out_file, "r") as out_f:
+        database = json.load(out_f)
 
-with open(args.out_file, "r") as out_f:
-    lines = json.load(out_f)
+    rm_scores = []
+    num_skip = 0
+    for line in tqdm(database):
+        if line == "run_configs":
+            continue
+        # outp = extract_out(database, line)
+        last_response_key = list(database[line]['response'])[-1]
+        last_response = database[line]['response'][last_response_key]
+        if type(last_response) == dict:
+            last_response = last_response['worker']
+        combined_out = database[line]['prompt'] + last_response
+        # get rm_score
+        tokens = tokenizer(combined_out, return_tensors="pt", padding=True).input_ids.to(args.device)
+        print(f"{tokens.shape=}")
+        if tokens.shape[1] >= 1334: return None
+        rm_out = rm_model(tokens)
+        rm_score = rm_out.logits.flatten().item()
+        del rm_out
+        del tokens
 
-rm_model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1, torch_dtype=torch.float16).to(args.rm_gpu)
-rm_model = rm_model.to("cuda:0")
-rm_model.eval()
+        if rm_score is None:
+            print("skipped one")
+            num_skip += 1
+            continue
+        else: rm_scores.append(rm_score)
 
-def extract_out(output_data):
-   
-    if "response" in output_data:
-        output = output_data["response"]
-    elif "output" in output_data:
-        output = output_data["output"]
+    print(f"{np.mean(rm_scores)=}")
+    print(f"{num_skip=}")
+    return np.mean(rm_scores)
 
-    output_np = output.removeprefix(output_data["prompt"])
-    if output_np.startswith(": "): output = output_np[2:]
-    output_np = re.split("human:", output_np, flags=re.IGNORECASE)[0]
-    return output_data["prompt"]+output_np
+if __name__=="__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_name", type=str, default="usvsnsp/pythia-6.9b-rm-full-hh-rlhf")
+    parser.add_argument("--out_file", type=str, default="run_outs/backup_out_collab_0.jsonl")
+    parser.add_argument("--device", type=str, default="cuda:0")
 
+    args = parser.parse_args()
 
-def get_rm(text):
-    tokens = tokenizer(text, return_tensors="pt", padding=True).input_ids.to(args.rm_gpu)
-    print(f"{tokens.shape=}")
-    if tokens.shape[1] >= 1334: return None
-    rm_out = rm_model(tokens)
-    rm_val = rm_out.logits.flatten().item()
-    del rm_out
-    del tokens
-    return rm_val
-
-def get_rm_from_tokens(tokens):
-    return rm_model(torch.tensor(tokens).unsqueeze(0).to(args.rm_gpu)).logits.flatten().item()
-
-
-
-rm_scores = []
-num_skip = 0
-count = 0
-for line in tqdm(lines):
-    count += 1
-    outp = extract_out(line)
-    if len(outp) == 0: rm_scores.append(0.)
-    rm_score = get_rm(outp)
-    if rm_score == None: 
-        print("skipped one")
-        num_skip += 1
-        continue
-    else: rm_scores.append(rm_score)
-
-import numpy as np
-print(f"{np.mean(rm_scores)=}")
-print(f"{num_skip=}")
+    main(args)

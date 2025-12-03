@@ -7,7 +7,6 @@ np.random.seed(42)
 torch.manual_seed(42)
 import time
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification
-import re
 import copy
 
 
@@ -65,9 +64,8 @@ class TQ_indirect():
         start = time.time()
         self.LLM = AutoModelForCausalLM.from_pretrained(llm_path, torch_dtype=torch_dtype).to(self.llm_dev)
         self.LLM.eval()
-        print(f"LLM loaded in : {time.time() - start : .2f}")
-
         self.tokenizer = AutoTokenizer.from_pretrained(llm_path, padding_side='left')
+        print(f"LLM loaded in : {time.time() - start : .2f}")
         print("Loading RMs...")
         start = time.time()
         self.RM_1 = AutoModelForSequenceClassification.from_pretrained(rm_path, num_labels=1, torch_dtype=torch_dtype).to(self.rm_dev_1)
@@ -90,13 +88,6 @@ class TQ_indirect():
         self.reward_tokenizer_1.pad_token = self.reward_tokenizer_1.eos_token
         self.reward_tokenizer_2.pad_token = self.reward_tokenizer_2.eos_token
         print(f"RMs loaded in : {time.time() - start : .2f}")
-        
-    def get_input_ids(self, prompt: str) -> torch.Tensor:
-        tokens = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.llm_dev)
-        return tokens
-    
-    def tokens_to_text(self, tokens: torch.Tensor) -> List[str]:
-        return self.tokenizer.batch_decode(tokens, skip_special_tokens=True)
     
     def generate_greedy_step_large(self, mout, input_ids, pre_screen_beam_width=40, weight=0., rm_cached=None, chunk_size=10, debug=True, _use_cache=True):
         out_logits = mout.logits[:, -1]
@@ -212,12 +203,16 @@ class TQ_indirect():
         if debug: print(f"{top_k_ids.shape=}")
         return flat_trme[top_k_ids], scores
     
-    def generate(self, prompt, weight=0., topk=1, max_new_token=128, method="greedy", temperature=0.7, chunk_size=5, debug=False):
-        tokens = self.get_input_ids(prompt)
-        initial_len = tokens.shape[-1]
+    def generate(self, prompt, weight=0., topk=1, max_new_token=128, method="greedy", temperature=0.7, chunk_size=5, align=True, debug=False):
+        tokens = self.tokenizer(prompt, return_tensors="pt").to(self.llm_dev)
+        if not align:
+            tokens = self.LLM.generate(**tokens, max_new_tokens=max_new_token)
+            scores = 1
+            return tokens, scores
+        tokens = tokens.input_ids.to(self.llm_dev)
         if chunk_size == "auto":
-            chunk_size = auto_size(initial_len + max_new_token, topk)
-            print(f"auto {chunk_size=}, {topk=}, {initial_len=}!")
+            chunk_size = auto_size(tokens.shape[-1] + max_new_token, topk)
+            print(f"auto {chunk_size=}, {topk=}, {tokens.shape=}!")
         
         if tokens.shape[-1] > self.LLM.config.to_dict().get("max_sequence_length", 2048):
             print("The sequence of tokens is too long!!! Returning none!")
@@ -233,13 +228,8 @@ class TQ_indirect():
             if debug: print(f"{type(rm_cached)=}")
             with torch.no_grad():
                 attn_mask = create_attention_mask(tokens.shape[1], tokens.shape[0]).to(self.llm_dev)
-                if cached is None:
-                    mout = self.LLM(**self.LLM.prepare_inputs_for_generation(input_ids=tokens, attention_mask=attn_mask, past_key_values=None, use_cache=True))
-                    cached = mout.past_key_values
-                else:
-                    mout = self.LLM(**self.LLM.prepare_inputs_for_generation(input_ids=tokens, attention_mask=attn_mask, past_key_values=cached, use_cache=True))
-                    cached = mout.past_key_values
-                
+                mout = self.LLM(**self.LLM.prepare_inputs_for_generation(input_ids=tokens, attention_mask=attn_mask, past_key_values=None, use_cache=True))
+                cached = mout.past_key_values
                 if method == "greedy_large":
                     if debug: print("large")
                     tokens, rm_cached = self.generate_greedy_step_large(mout, tokens, topk, weight, rm_cached, chunk_size, debug)   
