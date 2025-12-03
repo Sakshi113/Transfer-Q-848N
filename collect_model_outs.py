@@ -83,7 +83,6 @@ def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_s
         # only collaborative TQ gives out dict that is already in text form...
         return tokens, 0, scores
     tokens_text = search.tokenizer.batch_decode(tokens, skip_special_tokens=True)[0]
-    del tokens
     text_response = tokens_text.removeprefix(prompt)
     return text_response, tokens, scores
 
