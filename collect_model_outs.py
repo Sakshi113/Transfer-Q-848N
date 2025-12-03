@@ -197,7 +197,7 @@ if __name__=="__main__":
 
     parser.add_argument("--llm_gpu", type=str, default="cuda:0")
     parser.add_argument("--rm_gpu", type=str, default="cuda:1")
-    parser.add_argument("--rm2_gpu", type=str, default="cuda:2")
+    parser.add_argument("--rm2_gpu", type=str, default="cuda:1")
     parser.add_argument("--recover", action='store_true', default=False)
 
     parser.add_argument("--config", type=str, default="configs/direct_config.yaml")
@@ -209,7 +209,7 @@ if __name__=="__main__":
     # parser.add_argument("--config", type=str, default="configs/indirect_collab_config.yaml")
     # parser.add_argument("--task_type", default="collab", type=str)
 
-    parser.add_argument("--out_file", type=str, default="run_outs/example_out")
+    parser.add_argument("--out_file", type=str, default="run_outs/llama")
 
     args = parser.parse_args()
 
