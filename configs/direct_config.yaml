@@ -4,7 +4,11 @@
 "mode": "greedy"
 "sample_temp": null
 "debug" : False
+"align" : True
 # specifying model names
-"llm": "lomahony/eleuther-pythia6.9b-hh-dpo"
-"rm": "usvsnsp/pythia-6.9b-rm-full-hh-rlhf"
+#"llm": "lomahony/eleuther-pythia6.9b-hh-dpo"
+"llm": "Salesforce/LLaMA-3-8B-SFR-Iterative-DPO-R"
+
+#"rm": "usvsnsp/pythia-6.9b-rm-full-hh-rlhf"
+"rm": "Salesforce/LLaMA-3-8B-SFR-RM-R"
 "cache_dir" : "/fs/nexus-scratch/jianyu34/.cache/huggingface"

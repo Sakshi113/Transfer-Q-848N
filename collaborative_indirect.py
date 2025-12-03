@@ -6,22 +6,22 @@ np.random.seed(42)
 torch.manual_seed(42)
 
 class Worker_TQ:
-    def __init__(self, tq):
+    def __init__(self, tq: TQ_indirect):
         self.tq = tq
 
     def generate(self, user_prompt, **gen_kwargs):
         worker_tokens, worker_scores = self.tq.generate(user_prompt, **gen_kwargs)
-        worker_tokens_text = self.tq.tokens_to_text(worker_tokens)[0]
+        worker_tokens_text = self.tq.tokenizer.batch_decode(worker_tokens, skip_special_tokens=True)[0]
         del worker_tokens
         worker_res = worker_tokens_text.removeprefix(user_prompt)
         
         return worker_res, worker_scores
-    
+
 class Critic_TQ:
-    def __init__(self, tq):
+    def __init__(self, tq: TQ_indirect):
         self.tq = tq
 
-    def score(self, user_prompt, worker_res, **gen_kwargs):
+    def score(self, user_prompt, worker_res, align=True, **gen_kwargs):
         critic_prompt = textwrap.dedent(f"""
             Evaluate the **harmfulness** of the following response on a scale from 0 to 10.
 
@@ -43,21 +43,22 @@ class Critic_TQ:
             Example output: 5
         """).strip()
         
-        critic_tokens, critic_scores = self.tq.generate(critic_prompt, **gen_kwargs)
-        critic_tokens_text = self.tq.tokens_to_text(critic_tokens)[0]
+        critic_tokens, critic_scores = self.tq.generate(critic_prompt, align=align, **gen_kwargs)
+        # critic_tokens_text = self.tq.tokens_to_text(critic_tokens)[0]
+        critic_tokens_text = self.tq.tokenizer.batch_decode(critic_tokens, skip_special_tokens=True)[0]
         del critic_tokens
         critic_res = critic_tokens_text.removeprefix(critic_prompt)
 
         return critic_res, critic_scores
     
 class Orchestrator:
-    def __init__(self, tq, device="cuda:0"):
+    def __init__(self, tq: TQ_indirect, device="cuda:0"):
         self.tq = tq
         self.base_llm = self.tq.LLM
         self.base_tokenizer = self.tq.tokenizer
         self.device = device
 
-    def decide(self, user_prompt, worker_res, critic_res, threshold=5.0):
+    def decide(self, user_prompt, worker_res, critic_res, max_new_token=200, threshold=5.0):
         orch_prompt = textwrap.dedent(f"""
             You are the **Orchestrator** agent.
             Your task is to decide whether the worker's answer should be **accepted** or **regenerated**,
@@ -99,9 +100,9 @@ class Orchestrator:
                 <<<ACCEPTED>>>
         """).strip()
 
-        input_ids = self.base_tokenizer(orch_prompt, return_tensors="pt").input_ids.to(self.device)
-        out = self.base_llm.generate(input_ids, max_new_tokens=200)
-        text = self.base_tokenizer.decode(out[0], skip_special_tokens=True)
+        inputs = self.base_tokenizer(orch_prompt, return_tensors="pt").to(self.device)
+        outputs = self.base_llm.generate(**inputs, max_new_tokens=max_new_token)
+        text = self.base_tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
         orches_res = text.removeprefix(orch_prompt)
         
         return orches_res
@@ -116,23 +117,24 @@ class AgenticTQ:
         self.orchestrator = Orchestrator(self.tq, device=llm_device)
         self.max_iters = max_iters
 
-    def generate(self, user_prompt, verbose=True, **gen_kwargs):
+    def generate(self, user_prompt, align=True, verbose=True, **gen_kwargs):
         response_dict = {}
         scores_dict = {}
+        original_prompt = user_prompt.copy()
         for step in range(self.max_iters):
 
             if verbose: print(f"===== STEP {step} =====")
             response_dict[step] = {}
             scores_dict[step] = {}
             # Worker
-            worker_res, worker_scores = self.worker.generate(user_prompt, **gen_kwargs)
+            worker_res, worker_scores = self.worker.generate(user_prompt, align=align, **gen_kwargs)
             response_dict[step]["worker"] = worker_res
             scores_dict[step]["worker"] = worker_scores
             if verbose: print("[Worker Output]:", worker_res)
 
             # Critic
             critic_res, critic_scores = self.critic.score(
-                user_prompt, worker_res, **gen_kwargs
+                user_prompt, worker_res, align=align, **gen_kwargs
             )
             response_dict[step]["critic"] = critic_res
             scores_dict[step]["critic"] = critic_scores
@@ -151,6 +153,9 @@ class AgenticTQ:
 
             elif "REGENERATE" in decision:
                 if verbose: print("Unsafe -> Regenerating...\n")
+                # overwrite user prompt
+                user_prompt = (f" {original_prompt}, the original output was {worker_res}, this response was deemed harmful, "
+                                f"please generate a new response that is less harmful.")
                 continue
 
         if verbose: print("Failed to generate safe answer.")
