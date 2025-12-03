@@ -1,9 +1,12 @@
+from typing import List
 import torch
+from torch.nn import functional as F
+from tqdm import tqdm
 import numpy as np
 import textwrap
-from indirect import TQ_indirect
 np.random.seed(42)
 torch.manual_seed(42)
+from indirect import TQ_indirect
 
 class Worker_TQ:
     def __init__(self, tq):
@@ -18,8 +21,13 @@ class Worker_TQ:
         return worker_res, worker_scores
     
 class Critic_TQ:
-    def __init__(self, tq):
+    # def __init__(self, tq):
+    #     self.tq = tq
+    def __init__(self, tq, use_transfer_q=True):
         self.tq = tq
+        self.use_transfer_q = use_transfer_q # New Flag
+        self.tokenizer = self.tq.tokenizer
+        self.llm = self.tq.LLM # Access base model directly
 
     def score(self, user_prompt, worker_res, **gen_kwargs):
         critic_prompt = textwrap.dedent(f"""
@@ -43,10 +51,25 @@ class Critic_TQ:
             Example output: 5
         """).strip()
         
-        critic_tokens, critic_scores = self.tq.generate(critic_prompt, **gen_kwargs)
-        critic_tokens_text = self.tq.tokens_to_text(critic_tokens)[0]
-        del critic_tokens
-        critic_res = critic_tokens_text.removeprefix(critic_prompt)
+        # critic_tokens, critic_scores = self.tq.generate(critic_prompt, **gen_kwargs)
+        # critic_tokens_text = self.tq.tokens_to_text(critic_tokens)[0]
+        # del critic_tokens
+        # critic_res = critic_tokens_text.removeprefix(critic_prompt)
+        if self.use_transfer_q:
+            # --- Condition A: TQ* Critic (Existing Logic) ---
+            critic_tokens, critic_scores = self.tq.generate(critic_prompt, **gen_kwargs)
+            critic_tokens_text = self.tq.tokens_to_text(critic_tokens)[0]
+            # No need to delete tokens manually in python usually, but keeping your style
+            critic_res = critic_tokens_text.removeprefix(critic_prompt)
+        else:
+            # --- Condition B: Standard Critic (No Transfer) ---
+            # Uses standard HuggingFace generation
+            input_ids = self.tokenizer(critic_prompt, return_tensors="pt").input_ids.to(self.tq.llm_dev)
+            # Standard generation (Greedy if do_sample=False)
+            out = self.llm.generate(input_ids, max_new_tokens=10, pad_token_id=self.tokenizer.eos_token_id)
+            critic_tokens_text = self.tokenizer.decode(out[0], skip_special_tokens=True)
+            critic_res = critic_tokens_text.removeprefix(critic_prompt)
+            critic_scores = [0.0] # Dummy score
 
         return critic_res, critic_scores
     
@@ -107,12 +130,12 @@ class Orchestrator:
         return orches_res
 
 class AgenticTQ:
-    def __init__(self, llm_path, rm_path, rm2_path, llm_device, rm_dev, rm2_dev, max_iters=5):
+    def __init__(self, llm_path, rm_path, rm2_path, llm_device, rm_dev, rm2_dev, max_iters=5, critic_use_tq=True):
         self.tq = TQ_indirect(llm_path, rm_path, rm2_path, llm_device=llm_device,
                               rm_device=rm_dev, rm_dev_2=rm2_dev, torch_dtype=torch.float16)
         self.tokenizer = self.tq.tokenizer
         self.worker = Worker_TQ(self.tq)
-        self.critic = Critic_TQ(self.tq)
+        self.critic = Critic_TQ(self.tq, use_transfer_q=critic_use_tq) 
         self.orchestrator = Orchestrator(self.tq, device=llm_device)
         self.max_iters = max_iters
 
@@ -155,7 +178,3 @@ class AgenticTQ:
 
         if verbose: print("Failed to generate safe answer.")
         return None, None
-            
-        
-        
-        

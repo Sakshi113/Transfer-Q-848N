@@ -7,4 +7,4 @@
 # specifying model names
 "llm": "lomahony/eleuther-pythia6.9b-hh-dpo"
 "rm": "usvsnsp/pythia-6.9b-rm-full-hh-rlhf"
-"cache_dir" : "/fs/nexus-scratch/jianyu34/.cache/huggingface"
+# "cache_dir" : "/fs/nexus-scratch/jianyu34/.cache/huggingface"

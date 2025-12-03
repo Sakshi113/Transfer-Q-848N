@@ -12,4 +12,5 @@
 #"rm": "usvsnsp/pythia-6.9b-rm-full-hh-rlhf"
 "rm": "Salesforce/LLaMA-3-8B-SFR-RM-R"
 "rm2": "usvsnsp/pythia-6.9b-rm-full-hh-rlhf"
-"cache_dir" : "/fs/nexus-scratch/jianyu34/.cache/huggingface"
+"critic_use_tq": False
+# "cache_dir" : "/fs/nexus-scratch/jianyu34/.cache/huggingface"

@@ -109,6 +109,10 @@ def main(args):
         print("Running berkeley-nest/Nectar")
         test_ds = test_ds["prompt"]
 
+    elif args.dataset == "PKU-Alignment/BeaverTails":
+        print("Running PKU-Alignment/BeaverTails")
+        test_ds = test_ds["prompt"]
+
 
     end_idx = int(len(test_ds) * (args.run_percent/100.))
     print(f"{end_idx=}, {len(test_ds)=}")
@@ -124,10 +128,12 @@ def main(args):
                              llm_device=args.llm_gpu, rm_device=args.rm_gpu)
     elif args.task_type == "collab":
         print(f"Loading models ({run_configs['llm']}, {run_configs['rm']})")
+        critic_use_tq = run_configs.get("critic_use_tq", True) 
         search = AgenticTQ(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
                            rm2_path=run_configs['rm2'], llm_device=args.llm_gpu,
                            rm_dev=args.rm_gpu, rm2_dev=args.rm2_gpu,
-                           max_iters=run_configs['max_iters'])
+                           max_iters=run_configs['max_iters'],
+                           critic_use_tq=critic_use_tq)
     else:
         print(f"ERROR, unknown task type {args.task_type}")
         exit()
@@ -196,7 +202,7 @@ if __name__=="__main__":
 
     parser.add_argument("--llm_gpu", type=str, default="cuda:0")
     parser.add_argument("--rm_gpu", type=str, default="cuda:1")
-    parser.add_argument("--rm2_gpu", type=str, default="cuda:2")
+    parser.add_argument("--rm2_gpu", type=str, default="cuda:1")
     parser.add_argument("--recover", action='store_true', default=False)
 
     # parser.add_argument("--config", type=str, default="configs/direct_config.yaml")
@@ -205,10 +211,10 @@ if __name__=="__main__":
     # parser.add_argument("--config", type=str, default="configs/indirect_config.yaml")
     # parser.add_argument("--task_type", default="indirect", type=str)
 
-    parser.add_argument("--config", type=str, default="configs/indirect_collab_config.yaml")
+    parser.add_argument("--config", type=str, default="configs/indirect_collab_tq_config.yaml")
     parser.add_argument("--task_type", default="collab", type=str)
 
-    parser.add_argument("--out_file", type=str, default="run_outs/example_out")
+    parser.add_argument("--out_file", type=str, default="run_outs/indirect_baseline")
 
     args = parser.parse_args()
 
