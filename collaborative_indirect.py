@@ -108,33 +108,37 @@ class Orchestrator:
         return orches_res
 
 class AgenticTQ:
-    def __init__(self, llm_path, rm_path, rm2_path, llm_device, rm_dev, rm2_dev, max_iters=5):
+    def __init__(self, llm_path, rm_path, rm2_path, llm_device, rm_dev, rm2_dev, max_iters=5,
+                 align_worker=True, align_critic=True):
         self.tq = TQ_indirect(llm_path, rm_path, rm2_path, llm_device=llm_device,
                               rm_device=rm_dev, rm_dev_2=rm2_dev, torch_dtype=torch.float16)
         self.tokenizer = self.tq.tokenizer
         self.worker = Worker_TQ(self.tq)
+        self.align_worker = None
         self.critic = Critic_TQ(self.tq)
+        self.align_critic = align_critic
         self.orchestrator = Orchestrator(self.tq, device=llm_device)
         self.max_iters = max_iters
 
     def generate(self, user_prompt, align=True, verbose=True, **gen_kwargs):
         response_dict = {}
         scores_dict = {}
-        original_prompt = user_prompt.copy()
+        self.align_worker=align
+        original_prompt = user_prompt
         for step in range(self.max_iters):
 
             if verbose: print(f"===== STEP {step} =====")
             response_dict[step] = {}
             scores_dict[step] = {}
             # Worker
-            worker_res, worker_scores = self.worker.generate(user_prompt, align=align, **gen_kwargs)
+            worker_res, worker_scores = self.worker.generate(user_prompt, align=self.align_worker, **gen_kwargs)
             response_dict[step]["worker"] = worker_res
             scores_dict[step]["worker"] = worker_scores
             if verbose: print("[Worker Output]:", worker_res)
 
             # Critic
             critic_res, critic_scores = self.critic.score(
-                user_prompt, worker_res, align=align, **gen_kwargs
+                user_prompt, worker_res, align=self.align_critic, **gen_kwargs
             )
             response_dict[step]["critic"] = critic_res
             scores_dict[step]["critic"] = critic_scores
