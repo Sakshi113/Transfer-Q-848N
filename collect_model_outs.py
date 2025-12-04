@@ -17,10 +17,6 @@ np.random.seed(42)
 torch.manual_seed(42)
 
 def check_valid_args(args):
-    if args.recover:
-        print("LOOKS LIKE YOU WANT TO RECOVER SOME RESULTS,")
-        print("MAKE SURE ALL COMMANDLINE ARGS ARE EXACTLY THE SAME!!!")
-        input("PRESS ENTER TO CONTINUE")
 
     if not (args.max_new_token > 0):
         print("ERROR: Max tokens should be greater than 0!")
@@ -69,7 +65,6 @@ def check_valid_args(args):
         print(f"Missing key 'sample_temp' in {run_configs}")
         exit(1)
 
-    print(f"[ !! ] Please Double Check: task type {args.task_type}, loading config from {args.config}")
     return run_configs
 
 def runprompt(search, prompt: str, rm_weight=0., topk=5, new_token=24, mode="p_sigmoid_mixing", sample_temp=None, llm_dev:str="cuda:0",
@@ -90,8 +85,6 @@ def main(args):
     run_configs = check_valid_args(args)
     config_num=0
     json_save_path = f"{args.out_file}_{config_num}.jsonl"
-    hf_cache=None
-    # print(f"Loaded {len(run_configs)} run configs.")
     print(f"{run_configs=}")
 
     print(f"Loading dataset ({args.dataset=}, {args.split=})")
@@ -108,11 +101,21 @@ def main(args):
         print("Running berkeley-nest/Nectar")
         test_ds = test_ds["prompt"]
 
-
     end_idx = int(len(test_ds) * (args.run_percent/100.))
-    print(f"{end_idx=}, {len(test_ds)=}")
-
     truncated_ds = test_ds[0:end_idx]
+    print(f"{end_idx=}, {len(test_ds)=}")
+    if args.recover and Path(json_save_path).exists():
+        print(f"Loading {json_save_path}, checking config match...")
+        with open(json_save_path, 'r') as file:
+            data = json.load(file)
+        if data['run_configs'] == run_configs:
+            print("configs match")
+        else:
+            print("configs mismatch, cannot recover, exiting...")
+            exit(1)
+    else:
+        data = {"run_configs": run_configs}
+
     if args.task_type == "direct":
         print(f"Loading models ({run_configs['llm']}, {run_configs['rm']})")
         search = TQ_direct(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
@@ -122,7 +125,7 @@ def main(args):
         search = TQ_indirect(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
                              llm_device=args.llm_gpu, rm_device=args.rm_gpu)
     elif args.task_type == "collab":
-        print(f"Loading models ({run_configs['llm']}, {run_configs['rm']})")
+        print(f"Loading models ({run_configs['llm']}, {run_configs['rm']}, {run_configs['rm2']})")
         search = AgenticTQ(llm_path=run_configs['llm'], rm_path=run_configs['rm'],
                            rm2_path=run_configs['rm2'], llm_device=args.llm_gpu,
                            rm_dev=args.rm_gpu, rm2_dev=args.rm2_gpu,
@@ -133,26 +136,11 @@ def main(args):
 
     print(f"{len(truncated_ds)=}")
 
-    data = {"run_configs": run_configs}
-    if args.recover and Path(args.out_file + f"_{config_num}.jsonl").exists():
-        print(f"Run already exists, checking if it's done")
-        resfile = open(Path(args.out_file + f"_{config_num}.jsonl"))
-        samples = resfile.readlines()
-
-        if samples[-1] != "":
-            print("last line not empty??")
-            exit(1)
-
-        last_obj = json.loads(samples[-2])
-        if last_obj["prompt"] != truncated_ds[len(samples) -1]:
-            print(f"PROMPTS DID NOT MATCH RECOVERY FAILED!!!")
-            exit(1)
-
     score_overall = []
     if run_configs['align'] is False:
         print(f"WARNING you are running {run_configs['align']} so no alignment will be conducted.")
     for idx, ds_row in enumerate(tqdm(truncated_ds)):
-        if args.recover and (idx <= len(samples) -1):
+        if args.recover and (str(idx) in list(data.keys())):
             print(f"SKIPPING {idx}")
             continue
 
@@ -175,7 +163,7 @@ def main(args):
                      "elapsed":elapsed, "method": args.out_file + f"_{config_num}"}
         print(f"[DEBUG]: {elapsed=} {len(current_prompt)=} {current_prompt=}, {res=}")
         # saving periodically in case we lose progress:
-        if idx % 10 == 0:
+        if idx % 5 == 0:
             print(f"saving outputs to {json_save_path}")
             start = time.time()
             with open(Path(json_save_path), "w") as outfile:
@@ -216,7 +204,4 @@ if __name__=="__main__":
     print(f"{args=}")
     # HF_HOME=/fs/nexus-scratch/jianyu34/.cache/huggingface/
     # hf_cache = os.path.join(hf_home, "hub")
-
-    # for i in range(torch.cuda.device_count()):
-    #     print(torch.cuda.get_device_properties(i).name)
     main(args)
