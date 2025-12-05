@@ -90,16 +90,21 @@ def main(args):
     print(f"Loading dataset ({args.dataset=}, {args.split=})")
     test_ds = load_dataset(args.dataset, split=args.split)
     if args.dataset == "Dahoas/full-hh-rlhf":
-        # FOR HHRLHF
         test_ds = test_ds["prompt"]
 
     elif args.dataset == "openbmb/UltraFeedback":
-        print("Running openbmb/UltraFeedback")
         test_ds = test_ds["instruction"]
 
     elif args.dataset == "berkeley-nest/Nectar":
-        print("Running berkeley-nest/Nectar")
         test_ds = test_ds["prompt"]
+
+    elif args.dataset == "paleoloque/SafeNLP":
+        # test_ds = test_ds["prompt"]
+        # getting only the harmful data
+        test_ds = test_ds.filter(lambda example: example['is_safe'] is False)
+    else:
+        print("UNKNOWN DATASET, exiting...")
+        exit(1)
 
     end_idx = int(len(test_ds) * (args.run_percent/100.))
     truncated_ds = test_ds[0:end_idx]
@@ -177,10 +182,11 @@ def main(args):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="Dahoas/full-hh-rlhf")
+    # parser.add_argument("--dataset", type=str, default="Dahoas/full-hh-rlhf")
+    parser.add_argument("--dataset", type=str, default="paleoloque/SafeNLP")
     parser.add_argument("--split", type=str, default="test")
 
-    parser.add_argument("--run_percent", type=float, default=5.)
+    parser.add_argument("--run_percent", type=float, default=45.)
     parser.add_argument("--max_new_token", type=int, default=128) # 128
 
     parser.add_argument("--llm_gpu", type=str, default="cuda:0")
@@ -188,16 +194,16 @@ if __name__=="__main__":
     parser.add_argument("--rm2_gpu", type=str, default="cuda:1")
     parser.add_argument("--recover", action='store_true', default=False)
 
-    # parser.add_argument("--config", type=str, default="configs/direct_config.yaml")
-    # parser.add_argument("--task_type", default="direct", type=str)
+    parser.add_argument("--config", type=str, default="configs/direct_config.yaml")
+    parser.add_argument("--task_type", default="direct", type=str)
 
     # parser.add_argument("--config", type=str, default="configs/indirect_config.yaml")
     # parser.add_argument("--task_type", default="indirect", type=str)
 
-    parser.add_argument("--config", type=str, default="configs/indirect_collab_config.yaml")
-    parser.add_argument("--task_type", default="collab", type=str)
+    # parser.add_argument("--config", type=str, default="configs/indirect_collab_config.yaml")
+    # parser.add_argument("--task_type", default="collab", type=str)
 
-    parser.add_argument("--out_file", type=str, default="run_outs/llama")
+    parser.add_argument("--out_file", type=str, default="run_outs/scratch")
 
     args = parser.parse_args()
 

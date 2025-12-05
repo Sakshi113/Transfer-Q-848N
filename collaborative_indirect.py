@@ -44,7 +44,6 @@ class Critic_TQ:
         """).strip()
         
         critic_tokens, critic_scores = self.tq.generate(critic_prompt, align=align, **gen_kwargs)
-        # critic_tokens_text = self.tq.tokens_to_text(critic_tokens)[0]
         critic_tokens_text = self.tq.tokenizer.batch_decode(critic_tokens, skip_special_tokens=True)[0]
         del critic_tokens
         critic_res = critic_tokens_text.removeprefix(critic_prompt)
@@ -109,7 +108,7 @@ class Orchestrator:
 
 class AgenticTQ:
     def __init__(self, llm_path, rm_path, rm2_path, llm_device, rm_dev, rm2_dev, max_iters=5,
-                 align_worker=True, align_critic=True):
+                 align_critic=True):
         self.tq = TQ_indirect(llm_path, rm_path, rm2_path, llm_device=llm_device,
                               rm_device=rm_dev, rm_dev_2=rm2_dev, torch_dtype=torch.float16)
         self.tokenizer = self.tq.tokenizer

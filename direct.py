@@ -57,11 +57,11 @@ class TQ_direct:
 
         print("Loading RM...")
         start = time.time()
-        # self.RM = AutoModelForSequenceClassification.from_pretrained(rm_path, num_labels=1, torch_dtype=torch_dtype)
-        # self.RM = self.RM.to(self.rm_dev)
-        # self.reward_tokenizer = AutoTokenizer.from_pretrained(rm_path, padding_side='left')
-        # self.reward_tokenizer.pad_token = self.reward_tokenizer.eos_token
-        # self.RM.eval()
+        self.RM = AutoModelForSequenceClassification.from_pretrained(rm_path, num_labels=1, torch_dtype=torch_dtype)
+        self.RM = self.RM.to(self.rm_dev)
+        self.reward_tokenizer = AutoTokenizer.from_pretrained(rm_path, padding_side='left')
+        self.reward_tokenizer.pad_token = self.reward_tokenizer.eos_token
+        self.RM.eval()
         print(f"RM loaded in : {time.time() - start : .2f}")
 
     def get_input_ids(self, prompt: str) -> torch.Tensor:
