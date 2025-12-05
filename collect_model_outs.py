@@ -102,6 +102,7 @@ def main(args):
         # test_ds = test_ds["prompt"]
         # getting only the harmful data
         test_ds = test_ds.filter(lambda example: example['is_safe'] is False)
+        test_ds = test_ds['prompt']
     else:
         print("UNKNOWN DATASET, exiting...")
         exit(1)
@@ -192,18 +193,18 @@ if __name__=="__main__":
     parser.add_argument("--llm_gpu", type=str, default="cuda:0")
     parser.add_argument("--rm_gpu", type=str, default="cuda:1")
     parser.add_argument("--rm2_gpu", type=str, default="cuda:1")
-    parser.add_argument("--recover", action='store_true', default=False)
+    parser.add_argument("--recover", action='store_true', default=True)
 
-    parser.add_argument("--config", type=str, default="configs/direct_config.yaml")
-    parser.add_argument("--task_type", default="direct", type=str)
+    # parser.add_argument("--config", type=str, default="configs/direct_config.yaml")
+    # parser.add_argument("--task_type", default="direct", type=str)
 
     # parser.add_argument("--config", type=str, default="configs/indirect_config.yaml")
     # parser.add_argument("--task_type", default="indirect", type=str)
 
-    # parser.add_argument("--config", type=str, default="configs/indirect_collab_config.yaml")
-    # parser.add_argument("--task_type", default="collab", type=str)
+    parser.add_argument("--config", type=str, default="configs/indirect_collab_config.yaml")
+    parser.add_argument("--task_type", default="collab", type=str)
 
-    parser.add_argument("--out_file", type=str, default="run_outs/scratch")
+    parser.add_argument("--out_file", type=str, default="run_outs/safenlp")
 
     args = parser.parse_args()
 
