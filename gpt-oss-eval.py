@@ -34,7 +34,7 @@ def get_response(database, idx):
     return last_response
 
 
-def main(model_name, file1, file2, num_eval):
+def main(model_name, file1, file2, num_eval, verbose):
     system_begin = """[System]
         You are a precise assistant for checking the quality of the answer. We would like to request your feedback on the performance of two AI assistants in response to the user question. Please rate the level of detail of their responses. Your evaluation should consider factors such as the relevance, accuracy, depth, creativity, and level of detail of the response. Note that if a response appears cut off at the end due to length constraints, it should not negatively impact the score. Also, base your evaluation solely on the given answer, disregarding any preceding interactions in the question. Each assistant receives an overall score on a scale of 1 to 10, where a higher score indicates better overall performance."""
     # System_end = "[System] Please first output a single line containing only two values indicating the scores for Assistant 1 and 2, respectively. The two scores are separated by a space. In the subsequent line, please provide a comprehensive explanation of your evaluation, avoiding any potential bias and ensuring that the order in which the responses were presented does not affect your judgment."
@@ -67,8 +67,9 @@ def main(model_name, file1, file2, num_eval):
 
         chat = lms.Chat(system_begin + user_prompt + System_end)
         chat.add_user_message(user_prompt)
+        if verbose: print(user_prompt)
         output = model.respond(chat).content
-
+        if verbose: print(output)
         try:
             score1, score2 = map(float, re.split(r"final<\|message\|>", output)[-1].split(" "))
         except Exception:
@@ -100,8 +101,8 @@ def main(model_name, file1, file2, num_eval):
             break
 
     result = {
-        # "run_name_red": file1,
-        # "run_name_blue": file2,
+        "run_name_red": file1,
+        "run_name_blue": file2,
         "win": win,
         "tie": tie,
         "lose": lose,
@@ -113,10 +114,11 @@ if __name__ == "__main__":
     """
     I am using a different virtual environment with LM studio for this script
     """
-    num_eval = 50
-    model_name = "openai/gpt-oss-safeguard-20b"
+    num_eval = 65
+    # model_name = "openai/gpt-oss-safeguard-20b"
+    model_name = "openai/gpt-oss-20b"
     file1 = "run_outs/safenlp_no_align_critic_worker_collab_0.jsonl"
     file2 = "run_outs/safenlp_indirect_0.jsonl"
 
-    main(model_name, file1, file2, num_eval)
+    main(model_name, file1, file2, num_eval, verbose=False)
     

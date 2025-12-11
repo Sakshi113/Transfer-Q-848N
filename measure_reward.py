@@ -58,12 +58,14 @@ def main(args):
 
     print(f"{np.mean(rm_scores)=}")
     print(f"{num_skip=}")
+    print(rm_scores)
     return np.mean(rm_scores)
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default="usvsnsp/pythia-6.9b-rm-full-hh-rlhf")
-    parser.add_argument("--out_file", type=str, default="run_outs/llama_llm_only_direct_0.jsonl")
+    # parser.add_argument("--model_name", type=str, default="usvsnsp/pythia-6.9b-rm-full-hh-rlhf")
+    parser.add_argument("--model_name", type=str, default="nicholasKluge/Harmless-RewardModel")
+    parser.add_argument("--out_file", type=str, default="run_outs/safenlp_no_align_critic_worker_collab_0.jsonl")
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--num_entries", type=int, default=50)
 
